@@ -228,7 +228,7 @@ input{font-family:inherit;font-size:13px}
     <!-- Sidebar -->
     <div class="sidebar">
       <div class="sidebar-section">
-        <div class="section-label">API Keys</div>
+        <div class="section-label">OpenRouter Keys</div>
         <div id="sidebar-keys"></div>
         <div class="add-row">
           <input class="add-input" id="quick-key-input" placeholder="sk-or-v1-..." type="password">
@@ -236,11 +236,27 @@ input{font-family:inherit;font-size:13px}
         </div>
       </div>
       <div class="sidebar-section">
-        <div class="section-label">Model</div>
+        <div class="section-label">Gemini Keys</div>
+        <div id="sidebar-gemini-keys"></div>
+        <div class="add-row">
+          <input class="add-input" id="quick-gemini-key-input" placeholder="AIza..." type="password">
+          <button class="add-btn" onclick="quickAddGeminiKey()">+</button>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">OpenRouter Model</div>
         <div id="sidebar-models"></div>
         <div class="add-row">
           <input class="add-input" id="quick-model-input" placeholder="provider/model">
           <button class="add-btn" onclick="quickAddModel()">+</button>
+        </div>
+      </div>
+      <div class="sidebar-section">
+        <div class="section-label">Gemini Model</div>
+        <div id="sidebar-gemini-models"></div>
+        <div class="add-row">
+          <input class="add-input" id="quick-gemini-model-input" placeholder="gemini-2.5-flash">
+          <button class="add-btn" onclick="quickAddGeminiModel()">+</button>
         </div>
       </div>
       <div class="sidebar-section">
@@ -322,7 +338,7 @@ input{font-family:inherit;font-size:13px}
     <!-- Settings Tab -->
     <div class="settings-page" id="page-settings">
       <div class="settings-card">
-        <div class="settings-card-title">🔑 API Keys</div>
+        <div class="settings-card-title">🔑 OpenRouter API Keys</div>
         <div class="settings-card-sub">Add multiple OpenRouter API keys. The system will rotate and retry automatically.</div>
         <div id="settings-keys-list"></div>
         <div class="settings-divider"></div>
@@ -332,7 +348,7 @@ input{font-family:inherit;font-size:13px}
         </div>
       </div>
       <div class="settings-card">
-        <div class="settings-card-title">🤖 Models</div>
+        <div class="settings-card-title">🤖 OpenRouter Models</div>
         <div class="settings-card-sub">Add vision-capable models from OpenRouter. The first model in the list will be used.</div>
         <div id="settings-models-list"></div>
         <div class="settings-divider"></div>
@@ -341,13 +357,38 @@ input{font-family:inherit;font-size:13px}
           <button class="big-add-btn" onclick="settingsAddModel()">Add Model</button>
         </div>
         <div class="info-box" style="margin-top:14px">
-          <strong>Recommended vision models:</strong><br>
+          <strong>Recommended OpenRouter vision models:</strong><br>
           • google/gemini-2.0-flash-exp:free<br>
           • google/gemini-flash-1.5<br>
           • openai/gpt-4o<br>
           • openai/gpt-4o-mini<br>
           • anthropic/claude-3.5-sonnet<br>
           • meta-llama/llama-3.2-90b-vision-instruct
+        </div>
+      </div>
+      <div class="settings-card">
+        <div class="settings-card-title">🔑 Gemini AI Studio API Keys</div>
+        <div class="settings-card-sub">Add your Google AI Studio API keys. Get yours free at <strong>aistudio.google.com</strong>. Supports key rotation.</div>
+        <div id="settings-gemini-keys-list"></div>
+        <div class="settings-divider"></div>
+        <div class="big-add-row">
+          <input class="big-input" id="settings-gemini-key-input" placeholder="AIzaSy..." type="password">
+          <button class="big-add-btn" onclick="settingsAddGeminiKey()">Add Key</button>
+        </div>
+      </div>
+      <div class="settings-card">
+        <div class="settings-card-title">🤖 Gemini Models</div>
+        <div class="settings-card-sub">Add Gemini vision models. The first model in the list will be used. If both Gemini and OpenRouter are configured, they will alternate on retry.</div>
+        <div id="settings-gemini-models-list"></div>
+        <div class="settings-divider"></div>
+        <div class="big-add-row">
+          <input class="big-input" id="settings-gemini-model-input" placeholder="e.g. gemini-2.5-flash">
+          <button class="big-add-btn" onclick="settingsAddGeminiModel()">Add Model</button>
+        </div>
+        <div class="info-box" style="margin-top:14px">
+          <strong>Recommended Gemini vision models:</strong><br>
+          • gemini-2.5-flash<br>
+          • gemini-2.5-flash-lite
         </div>
       </div>
       <div class="settings-card">
@@ -379,9 +420,12 @@ input{font-family:inherit;font-size:13px}
 // STATE
 // ============================================================
 const state = {
-  apiKeys: [],
-  models: [],
+  apiKeys: [],       // OpenRouter keys
+  models: [],        // OpenRouter models
+  geminiKeys: [],    // Gemini AI Studio keys
+  geminiModels: [],  // Gemini models
   currentKeyIdx: 0,
+  currentGeminiKeyIdx: 0,
   retryCount: 0,
   files: [],       // {file, name, status, result, retries, objectUrl}
   results: [],     // {filename, description, keywords, categories}
@@ -407,14 +451,20 @@ function saveState(){
   try{
     localStorage.setItem('ss_gen_keys', JSON.stringify(state.apiKeys));
     localStorage.setItem('ss_gen_models', JSON.stringify(state.models));
+    localStorage.setItem('ss_gen_gemini_keys', JSON.stringify(state.geminiKeys));
+    localStorage.setItem('ss_gen_gemini_models', JSON.stringify(state.geminiModels));
   }catch(e){}
 }
 function loadState(){
   try{
     const k = localStorage.getItem('ss_gen_keys');
     const m = localStorage.getItem('ss_gen_models');
+    const gk = localStorage.getItem('ss_gen_gemini_keys');
+    const gm = localStorage.getItem('ss_gen_gemini_models');
     if(k) state.apiKeys = JSON.parse(k);
     if(m) state.models = JSON.parse(m);
+    if(gk) state.geminiKeys = JSON.parse(gk);
+    if(gm) state.geminiModels = JSON.parse(gm);
   }catch(e){}
 }
 
@@ -433,7 +483,7 @@ function switchTab(tab){
 // SIDEBAR RENDER
 // ============================================================
 function renderSidebar(){
-  // Keys
+  // OpenRouter Keys
   const keysEl = document.getElementById('sidebar-keys');
   keysEl.innerHTML = '';
   state.apiKeys.forEach((k,i)=>{
@@ -448,7 +498,24 @@ function renderSidebar(){
     `;
     keysEl.appendChild(d);
   });
-  // Models
+
+  // Gemini Keys
+  const geminiKeysEl = document.getElementById('sidebar-gemini-keys');
+  geminiKeysEl.innerHTML = '';
+  state.geminiKeys.forEach((k,i)=>{
+    const masked = k.length>12 ? k.slice(0,8)+'…'+k.slice(-4) : k;
+    const isActive = i === state.currentGeminiKeyIdx % Math.max(state.geminiKeys.length,1);
+    const d = document.createElement('div');
+    d.className = 'key-item' + (isActive?' active-key':'');
+    d.innerHTML = `
+      <span class="key-text">${masked}</span>
+      <span class="key-badge ${isActive?'on':'off'}">${isActive?'active':'standby'}</span>
+      <button class="key-del" onclick="removeGeminiKey(${i})" title="Remove">×</button>
+    `;
+    geminiKeysEl.appendChild(d);
+  });
+
+  // OpenRouter Models
   const modelsEl = document.getElementById('sidebar-models');
   modelsEl.innerHTML = '';
   state.models.forEach((m,i)=>{
@@ -461,6 +528,21 @@ function renderSidebar(){
     `;
     modelsEl.appendChild(d);
   });
+
+  // Gemini Models
+  const geminiModelsEl = document.getElementById('sidebar-gemini-models');
+  geminiModelsEl.innerHTML = '';
+  state.geminiModels.forEach((m,i)=>{
+    const d = document.createElement('div');
+    d.className = 'model-item';
+    d.innerHTML = `
+      <div class="model-active" style="${i===0?'':'background:var(--text4)'}"></div>
+      <span class="model-text" title="${m}">${m}</span>
+      <button class="model-del" onclick="removeGeminiModel(${i})" title="Remove">×</button>
+    `;
+    geminiModelsEl.appendChild(d);
+  });
+
   // Stats
   document.getElementById('sidebar-current-key-idx').textContent =
     state.apiKeys.length ? (state.currentKeyIdx % state.apiKeys.length)+1+'/'+state.apiKeys.length : '—';
@@ -468,7 +550,7 @@ function renderSidebar(){
 }
 
 function renderSettingsPage(){
-  // Keys list
+  // OpenRouter Keys list
   const kl = document.getElementById('settings-keys-list');
   kl.innerHTML = '';
   if(!state.apiKeys.length){
@@ -486,7 +568,7 @@ function renderSettingsPage(){
       kl.appendChild(d);
     });
   }
-  // Models list
+  // OpenRouter Models list
   const ml = document.getElementById('settings-models-list');
   ml.innerHTML='';
   if(!state.models.length){
@@ -503,6 +585,41 @@ function renderSettingsPage(){
       ml.appendChild(d);
     });
   }
+  // Gemini Keys list
+  const gkl = document.getElementById('settings-gemini-keys-list');
+  gkl.innerHTML='';
+  if(!state.geminiKeys.length){
+    gkl.innerHTML='<div style="color:var(--text3);font-size:12px;padding:8px 0">No Gemini keys added yet.</div>';
+  } else {
+    state.geminiKeys.forEach((k,i)=>{
+      const masked = k.slice(0,10)+'…'+k.slice(-6);
+      const d=document.createElement('div');
+      d.className='full-key-item';
+      d.innerHTML=`
+        <span class="full-key-val">${masked}</span>
+        <span class="key-badge ${i===0?'on':'off'}" style="font-size:11px">${i===0?'primary':'standby'}</span>
+        <button class="del-btn" onclick="removeGeminiKey(${i});renderSettingsPage()">Remove</button>
+      `;
+      gkl.appendChild(d);
+    });
+  }
+  // Gemini Models list
+  const gml = document.getElementById('settings-gemini-models-list');
+  gml.innerHTML='';
+  if(!state.geminiModels.length){
+    gml.innerHTML='<div style="color:var(--text3);font-size:12px;padding:8px 0">No Gemini models added yet.</div>';
+  } else {
+    state.geminiModels.forEach((m,i)=>{
+      const d=document.createElement('div');
+      d.className='full-model-item';
+      d.innerHTML=`
+        <div class="model-active" style="${i===0?'':'background:var(--text4)'}"></div>
+        <span class="full-model-val">${m}</span>
+        <button class="del-btn" onclick="removeGeminiModel(${i});renderSettingsPage()">Remove</button>
+      `;
+      gml.appendChild(d);
+    });
+  }
 }
 
 // ============================================================
@@ -514,7 +631,7 @@ function addKey(val){
   if(state.apiKeys.includes(k)) return showToast('Key already exists','error');
   state.apiKeys.push(k);
   saveState(); renderSidebar();
-  showToast('API key added ✓','success');
+  showToast('OpenRouter API key added ✓','success');
 }
 function removeKey(i){
   state.apiKeys.splice(i,1);
@@ -527,10 +644,35 @@ function addModel(val){
   if(state.models.includes(m)) return showToast('Model already exists','error');
   state.models.push(m);
   saveState(); renderSidebar();
-  showToast('Model added ✓','success');
+  showToast('OpenRouter model added ✓','success');
 }
 function removeModel(i){
   state.models.splice(i,1);
+  saveState(); renderSidebar();
+}
+function addGeminiKey(val){
+  const k = val.trim();
+  if(!k) return showToast('Please enter a Gemini API key','error');
+  if(state.geminiKeys.includes(k)) return showToast('Gemini key already exists','error');
+  state.geminiKeys.push(k);
+  saveState(); renderSidebar();
+  showToast('Gemini API key added ✓','success');
+}
+function removeGeminiKey(i){
+  state.geminiKeys.splice(i,1);
+  state.currentGeminiKeyIdx = 0;
+  saveState(); renderSidebar();
+}
+function addGeminiModel(val){
+  const m = val.trim();
+  if(!m) return showToast('Please enter a Gemini model name','error');
+  if(state.geminiModels.includes(m)) return showToast('Gemini model already exists','error');
+  state.geminiModels.push(m);
+  saveState(); renderSidebar();
+  showToast('Gemini model added ✓','success');
+}
+function removeGeminiModel(i){
+  state.geminiModels.splice(i,1);
   saveState(); renderSidebar();
 }
 function quickAddKey(){
@@ -541,6 +683,14 @@ function quickAddModel(){
   const inp = document.getElementById('quick-model-input');
   addModel(inp.value); inp.value='';
 }
+function quickAddGeminiKey(){
+  const inp = document.getElementById('quick-gemini-key-input');
+  addGeminiKey(inp.value); inp.value='';
+}
+function quickAddGeminiModel(){
+  const inp = document.getElementById('quick-gemini-model-input');
+  addGeminiModel(inp.value); inp.value='';
+}
 function settingsAddKey(){
   const inp = document.getElementById('settings-key-input');
   addKey(inp.value); inp.value=''; renderSettingsPage();
@@ -548,6 +698,14 @@ function settingsAddKey(){
 function settingsAddModel(){
   const inp = document.getElementById('settings-model-input');
   addModel(inp.value); inp.value=''; renderSettingsPage();
+}
+function settingsAddGeminiKey(){
+  const inp = document.getElementById('settings-gemini-key-input');
+  addGeminiKey(inp.value); inp.value=''; renderSettingsPage();
+}
+function settingsAddGeminiModel(){
+  const inp = document.getElementById('settings-gemini-model-input');
+  addGeminiModel(inp.value); inp.value=''; renderSettingsPage();
 }
 
 // ============================================================
@@ -646,8 +804,12 @@ function updateCardStatus(idx, status){
 // ============================================================
 async function startGenerate(){
   if(!state.files.length) return showToast('Upload files first','error');
-  if(!state.apiKeys.length) return showToast('Add at least one API key in Settings','error');
-  if(!state.models.length) return showToast('Add at least one model in Settings','error');
+
+  const hasOpenRouter = state.apiKeys.length > 0 && state.models.length > 0;
+  const hasGemini = state.geminiKeys.length > 0 && state.geminiModels.length > 0;
+  if(!hasOpenRouter && !hasGemini){
+    return showToast('Add at least one API key and model (OpenRouter or Gemini) in Settings','error');
+  }
 
   state.isRunning = true;
   state.shouldStop = false;
@@ -656,6 +818,7 @@ async function startGenerate(){
   state.errorCount = 0;
   state.retryCount = 0;
   state.currentKeyIdx = 0;
+  state.currentGeminiKeyIdx = 0;
 
   // Reset file statuses
   state.files.forEach(f=>{f.status='pending';f.result=null;f.retries=0;});
@@ -724,26 +887,56 @@ async function processFile(idx){
   let metadata = null;
   let attempt = 0;
 
+  const hasOpenRouter = state.apiKeys.length > 0 && state.models.length > 0;
+  const hasGemini = state.geminiKeys.length > 0 && state.geminiModels.length > 0;
+
   while(!metadata && !state.shouldStop){
     attempt++;
     f.retries = attempt - 1;
     updateCardStatus(idx,'processing');
 
-    const keyIdx = state.currentKeyIdx % state.apiKeys.length;
-    const apiKey = state.apiKeys[keyIdx];
-    const model = state.models[0]; // use first model
+    // Determine which provider to use this attempt
+    // If both available, alternate; otherwise use whichever is available
+    let useGemini = false;
+    if(hasGemini && hasOpenRouter){
+      useGemini = (attempt % 2 === 0); // alternate each retry
+    } else if(hasGemini){
+      useGemini = true;
+    }
 
     try{
-      metadata = await callOpenRouter(apiKey, model, base64, mimeType, epsName);
-      if(metadata){
-        state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
-        break;
+      if(useGemini){
+        const keyIdx = state.currentGeminiKeyIdx % state.geminiKeys.length;
+        const apiKey = state.geminiKeys[keyIdx];
+        const model = state.geminiModels[0];
+        metadata = await callGemini(apiKey, model, base64, mimeType, epsName);
+        if(metadata){
+          state.currentGeminiKeyIdx = (state.currentGeminiKeyIdx + 1) % state.geminiKeys.length;
+          break;
+        }
+        // null returned (parse failed) — rotate and delay to avoid tight loop
+        state.retryCount++;
+        if(hasGemini) state.currentGeminiKeyIdx = (state.currentGeminiKeyIdx + 1) % state.geminiKeys.length;
+        await sleep(1000);
+      } else {
+        const keyIdx = state.currentKeyIdx % state.apiKeys.length;
+        const apiKey = state.apiKeys[keyIdx];
+        const model = state.models[0];
+        metadata = await callOpenRouter(apiKey, model, base64, mimeType, epsName);
+        if(metadata){
+          state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
+          break;
+        }
+        // null returned (parse failed) — rotate and delay to avoid tight loop
+        state.retryCount++;
+        if(hasOpenRouter) state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
+        await sleep(1000);
       }
     }catch(e){
       state.retryCount++;
-      // Rotate to next key
-      state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
-      // Small delay before retry to avoid hammering
+      // Rotate keys on error
+      if(hasOpenRouter) state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
+      if(hasGemini) state.currentGeminiKeyIdx = (state.currentGeminiKeyIdx + 1) % state.geminiKeys.length;
       await sleep(1200);
     }
   }
@@ -766,7 +959,58 @@ async function processFile(idx){
 }
 
 // ============================================================
-// API CALL
+// GEMINI API CALL
+// ============================================================
+async function callGemini(apiKey, model, base64, mimeType, filename){
+  const prompt = buildPrompt(filename);
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+  const body = {
+    contents: [{
+      parts: [
+        {
+          inline_data: {
+            mime_type: mimeType,
+            data: base64
+          }
+        },
+        {
+          text: prompt
+        }
+      ]
+    }],
+    generationConfig: {
+      maxOutputTokens: 1200,
+      temperature: 0.4
+    }
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  if(!response.ok){
+    const errText = await response.text();
+    throw new Error(`Gemini API error ${response.status}: ${errText}`);
+  }
+
+  const data = await response.json();
+
+  if(!data.candidates || !data.candidates[0] || !data.candidates[0].content ||
+     !data.candidates[0].content.parts || !data.candidates[0].content.parts[0]){
+    throw new Error('Invalid Gemini API response structure');
+  }
+
+  const content = data.candidates[0].content.parts[0].text;
+  return parseMetadata(content);
+}
+
+// ============================================================
+// OPENROUTER API CALL
 // ============================================================
 async function callOpenRouter(apiKey, model, base64, mimeType, filename){
   const prompt = buildPrompt(filename);
@@ -1059,8 +1303,12 @@ document.addEventListener('keydown', e=>{
   if(e.key==='Enter'){
     if(document.activeElement.id==='quick-key-input') quickAddKey();
     if(document.activeElement.id==='quick-model-input') quickAddModel();
+    if(document.activeElement.id==='quick-gemini-key-input') quickAddGeminiKey();
+    if(document.activeElement.id==='quick-gemini-model-input') quickAddGeminiModel();
     if(document.activeElement.id==='settings-key-input') settingsAddKey();
     if(document.activeElement.id==='settings-model-input') settingsAddModel();
+    if(document.activeElement.id==='settings-gemini-key-input') settingsAddGeminiKey();
+    if(document.activeElement.id==='settings-gemini-model-input') settingsAddGeminiModel();
   }
 });
 
@@ -1075,9 +1323,9 @@ document.getElementById('page-generate').style.display = 'flex';
 document.getElementById('page-settings').style.display = 'none';
 
 // Show welcome toast if no keys configured
-if(state.apiKeys.length===0){
+if(state.apiKeys.length===0 && state.geminiKeys.length===0){
   setTimeout(()=>{
-    showToast('Welcome! Add your OpenRouter API key in Settings to get started.','info');
+    showToast('Welcome! Add your Gemini or OpenRouter API key in Settings to get started.','info');
   },500);
 }
 </script>
