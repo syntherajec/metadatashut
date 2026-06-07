@@ -88,6 +88,10 @@ input{font-family:inherit;font-size:13px}
 .gen-btn:hover:not(:disabled){background:var(--accent2)}
 .gen-btn:disabled{opacity:0.4;cursor:not-allowed}
 .stop-btn{background:var(--red-bg);border:1px solid var(--red);border-radius:9px;padding:10px 18px;color:var(--red);font-size:13px;font-weight:500;display:none}
+.resume-btn{background:var(--green-bg,rgba(34,197,94,0.15));border:1px solid var(--green);border-radius:9px;padding:10px 18px;color:var(--green);font-size:13px;font-weight:500;cursor:pointer}
+.resume-btn:hover{opacity:0.85}
+.upload-new-btn{background:rgba(99,102,241,0.15);border:1px solid #6366f1;border-radius:9px;padding:10px 18px;color:#6366f1;font-size:13px;font-weight:500;cursor:pointer}
+.upload-new-btn:hover{opacity:0.85}
 .stop-btn:hover{background:#3a1a1a}
 .clear-btn{background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:10px 16px;color:var(--text2);font-size:13px}
 .clear-btn:hover{border-color:var(--border2);color:var(--text1)}
@@ -287,6 +291,8 @@ input{font-family:inherit;font-size:13px}
           ✨ Generate Metadata
         </button>
         <button class="stop-btn" id="stop-btn" onclick="stopGenerate()">⏹ Stop</button>
+        <button class="resume-btn" id="resume-btn" onclick="resumeGenerate()" style="display:none">▶ Lanjutkan</button>
+        <button class="upload-new-btn" id="upload-new-btn" onclick="uploadNew()" style="display:none">📂 Upload Baru</button>
         <button class="clear-btn" id="clear-btn" onclick="clearAll()" style="display:none">🗑 Clear All</button>
         <span class="file-count" id="file-count-label"></span>
       </div>
@@ -469,6 +475,26 @@ function loadState(){
     if(gm) state.geminiModels = JSON.parse(gm);
   }catch(e){}
 }
+function saveDoneFile(filename){
+  try{
+    const raw = localStorage.getItem('ss_gen_done_files');
+    const done = raw ? JSON.parse(raw) : [];
+    if(!done.includes(filename)) done.push(filename);
+    localStorage.setItem('ss_gen_done_files', JSON.stringify(done));
+  }catch(e){}
+}
+function loadDoneFiles(){
+  try{
+    const raw = localStorage.getItem('ss_gen_done_files');
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return []; }
+}
+function clearDoneFiles(){
+  try{ localStorage.removeItem('ss_gen_done_files'); }catch(e){}
+}
+function hasDoneFiles(){
+  return loadDoneFiles().length > 0;
+}
 
 // ============================================================
 // TABS
@@ -521,10 +547,11 @@ function renderSidebar(){
   const modelsEl = document.getElementById('sidebar-models');
   modelsEl.innerHTML = '';
   state.models.forEach((m,i)=>{
+    const isActive = i === state.currentModelIdx % Math.max(state.models.length,1);
     const d = document.createElement('div');
     d.className = 'model-item';
     d.innerHTML = `
-      <div class="model-active" style="${i===0?'':'background:var(--text4)'}"></div>
+      <div class="model-active" style="${isActive?'':'background:var(--text4)'}"></div>
       <span class="model-text" title="${m}">${m}</span>
       <button class="model-del" onclick="removeModel(${i})" title="Remove">×</button>
     `;
@@ -535,10 +562,11 @@ function renderSidebar(){
   const geminiModelsEl = document.getElementById('sidebar-gemini-models');
   geminiModelsEl.innerHTML = '';
   state.geminiModels.forEach((m,i)=>{
+    const isActive = i === state.currentGeminiModelIdx % Math.max(state.geminiModels.length,1);
     const d = document.createElement('div');
     d.className = 'model-item';
     d.innerHTML = `
-      <div class="model-active" style="${i===0?'':'background:var(--text4)'}"></div>
+      <div class="model-active" style="${isActive?'':'background:var(--text4)'}"></div>
       <span class="model-text" title="${m}">${m}</span>
       <button class="model-del" onclick="removeGeminiModel(${i})" title="Remove">×</button>
     `;
@@ -748,6 +776,47 @@ function clearAll(){
   document.getElementById('result-tbody').innerHTML='';
   document.getElementById('results-section').classList.remove('show');
   document.getElementById('progress-section').classList.remove('show');
+  document.getElementById('upload-new-btn').style.display='none';
+  document.getElementById('resume-btn').style.display='none';
+}
+
+function uploadNew(){
+  if(state.isRunning) return;
+  // Clear files and done history — fresh start
+  state.files.forEach(f=>{if(f.objectUrl) URL.revokeObjectURL(f.objectUrl)});
+  state.files=[];
+  state.results=[];
+  state.doneCount=0;
+  state.errorCount=0;
+  clearDoneFiles();
+  updateUI();
+  document.getElementById('result-tbody').innerHTML='';
+  document.getElementById('results-section').classList.remove('show');
+  document.getElementById('progress-section').classList.remove('show');
+  showToast('Upload baru dimulai — riwayat sebelumnya dihapus','info');
+  // Open file picker
+  document.getElementById('file-input').click();
+}
+
+async function resumeGenerate(){
+  if(!state.files.length) return showToast('Upload file dulu','error');
+  const doneNames = loadDoneFiles();
+  if(!doneNames.length) return showToast('Tidak ada riwayat — klik Generate','info');
+
+  // Mark already-done files instantly
+  let skipped = 0;
+  state.files.forEach((f,i)=>{
+    const epsName = f.name.replace(/\.(jpg|jpeg|png)$/i,'.eps');
+    if(doneNames.includes(f.name) || doneNames.includes(epsName)){
+      f.status = 'done';
+      skipped++;
+    }
+  });
+  if(skipped) showToast(`${skipped} file di-skip (sudah pernah diproses)`,'info');
+
+  renderFileGrid();
+  // Now run generate — processFile will check status and skip done files
+  await startGenerate(true);
 }
 
 function updateUI(){
@@ -755,6 +824,8 @@ function updateUI(){
   document.getElementById('file-count-label').textContent = n ? `${n} file${n>1?'s':''} loaded` : '';
   document.getElementById('gen-btn').disabled = !n || state.isRunning;
   document.getElementById('clear-btn').style.display = n && !state.isRunning ? 'inline-flex' : 'none';
+  document.getElementById('upload-new-btn').style.display = n && !state.isRunning ? 'inline-flex' : 'none';
+  document.getElementById('resume-btn').style.display = n && !state.isRunning && hasDoneFiles() ? 'inline-flex' : 'none';
   renderFileGrid();
 }
 
@@ -806,7 +877,7 @@ function updateCardStatus(idx, status){
 // ============================================================
 // MAIN GENERATE FLOW
 // ============================================================
-async function startGenerate(){
+async function startGenerate(isResume=false){
   if(!state.files.length) return showToast('Upload files first','error');
 
   const hasOpenRouter = state.apiKeys.length > 0 && state.models.length > 0;
@@ -843,8 +914,10 @@ async function startGenerate(){
 
   for(let i=0; i<state.files.length; i++){
     if(state.shouldStop) break;
+    if(state.files[i].status === 'done') continue; // skip already done
     await processFile(i);
     updateProgress(i+1, state.files.length);
+    renderSidebar();
     await sleep(50);
   }
 
@@ -889,18 +962,14 @@ async function processFile(idx){
   // Build output filename (.eps)
   const epsName = f.name.replace(/\.(jpg|jpeg|png)$/i,'.eps');
 
-  // Build attempt list: all key×model combinations per provider, alternating if both active
-  // Max attempts = total combinations to prevent stuck
+  // Retry terus sampai berhasil atau user klik Stop
   const hasOpenRouter = state.apiKeys.length > 0 && state.models.length > 0;
   const hasGemini = state.geminiKeys.length > 0 && state.geminiModels.length > 0;
-  const orCombos = hasOpenRouter ? state.apiKeys.length * state.models.length : 0;
-  const gCombos  = hasGemini    ? state.geminiKeys.length * state.geminiModels.length : 0;
-  const maxAttempts = Math.max(orCombos + gCombos, 1);
 
   let metadata = null;
   let attempt = 0;
 
-  while(!metadata && !state.shouldStop && attempt < maxAttempts){
+  while(!metadata && !state.shouldStop){
     attempt++;
     f.retries = attempt - 1;
     updateCardStatus(idx, 'processing');
@@ -921,14 +990,13 @@ async function processFile(idx){
         const model  = state.geminiModels[mIdx];
         metadata = await callGemini(apiKey, model, base64, mimeType, epsName);
         if(metadata){
-          // Advance both key and model for next file (round-robin)
           state.currentGeminiModelIdx = (state.currentGeminiModelIdx + 1) % state.geminiModels.length;
           if(state.currentGeminiModelIdx === 0){
             state.currentGeminiKeyIdx = (state.currentGeminiKeyIdx + 1) % state.geminiKeys.length;
           }
           break;
         }
-        // null return — rotate model first, then key
+        // null return — rotate and delay
         state.retryCount++;
         state.currentGeminiModelIdx = (state.currentGeminiModelIdx + 1) % state.geminiModels.length;
         if(state.currentGeminiModelIdx === 0){
@@ -942,14 +1010,13 @@ async function processFile(idx){
         const model  = state.models[mIdx];
         metadata = await callOpenRouter(apiKey, model, base64, mimeType, epsName);
         if(metadata){
-          // Advance both key and model for next file (round-robin)
           state.currentModelIdx = (state.currentModelIdx + 1) % state.models.length;
           if(state.currentModelIdx === 0){
             state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
           }
           break;
         }
-        // null return — rotate model first, then key
+        // null return — rotate and delay
         state.retryCount++;
         state.currentModelIdx = (state.currentModelIdx + 1) % state.models.length;
         if(state.currentModelIdx === 0){
@@ -959,7 +1026,8 @@ async function processFile(idx){
       }
     }catch(e){
       state.retryCount++;
-      // On exception: rotate model first, then key — both providers
+      const is429 = e.message && e.message.includes('429');
+      // Rotate model first, then key
       if(hasGemini){
         state.currentGeminiModelIdx = (state.currentGeminiModelIdx + 1) % state.geminiModels.length;
         if(state.currentGeminiModelIdx === 0){
@@ -972,7 +1040,13 @@ async function processFile(idx){
           state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
         }
       }
-      await sleep(1200);
+      // Rate limit: tunggu lebih lama sebelum retry
+      if(is429){
+        setStatusPill('processing', `⏳ Rate limit — waiting...`);
+        await sleep(8000);
+      } else {
+        await sleep(1200);
+      }
     }
   }
 
@@ -986,6 +1060,7 @@ async function processFile(idx){
       categories: metadata.categories
     });
     state.doneCount++;
+    saveDoneFile(f.name); // persist for resume
     updateCardStatus(idx,'done');
     appendResultRow(epsName, metadata);
   } else {
@@ -1029,8 +1104,9 @@ async function callGemini(apiKey, model, base64, mimeType, filename){
   });
 
   if(!response.ok){
+    const status = response.status;
     const errText = await response.text();
-    throw new Error(`Gemini API error ${response.status}: ${errText}`);
+    throw new Error(`Gemini API error ${status}: ${errText}`);
   }
 
   const data = await response.json();
