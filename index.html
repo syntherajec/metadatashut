@@ -425,7 +425,9 @@ const state = {
   geminiKeys: [],    // Gemini AI Studio keys
   geminiModels: [],  // Gemini models
   currentKeyIdx: 0,
+  currentModelIdx: 0,
   currentGeminiKeyIdx: 0,
+  currentGeminiModelIdx: 0,
   retryCount: 0,
   files: [],       // {file, name, status, result, retries, objectUrl}
   results: [],     // {filename, description, keywords, categories}
@@ -762,6 +764,8 @@ function renderFileGrid(){
   if(!n){section.classList.remove('show');return;}
   section.classList.add('show');
   document.getElementById('grid-title').textContent = `Files (${n})`;
+  // Skip full rebuild while generate is running — updateCardStatus handles individual cards
+  if(state.isRunning) return;
   const grid = document.getElementById('file-grid');
   grid.innerHTML='';
   state.files.forEach((f,i)=>{
@@ -818,7 +822,9 @@ async function startGenerate(){
   state.errorCount = 0;
   state.retryCount = 0;
   state.currentKeyIdx = 0;
+  state.currentModelIdx = 0;
   state.currentGeminiKeyIdx = 0;
+  state.currentGeminiModelIdx = 0;
 
   // Reset file statuses
   state.files.forEach(f=>{f.status='pending';f.result=null;f.retries=0;});
@@ -839,7 +845,7 @@ async function startGenerate(){
     if(state.shouldStop) break;
     await processFile(i);
     updateProgress(i+1, state.files.length);
-    renderSidebar();
+    await sleep(50);
   }
 
   state.isRunning = false;
@@ -883,60 +889,89 @@ async function processFile(idx){
   // Build output filename (.eps)
   const epsName = f.name.replace(/\.(jpg|jpeg|png)$/i,'.eps');
 
-  // Try API with rotation - no limit on retries
+  // Build attempt list: all key×model combinations per provider, alternating if both active
+  // Max attempts = total combinations to prevent stuck
+  const hasOpenRouter = state.apiKeys.length > 0 && state.models.length > 0;
+  const hasGemini = state.geminiKeys.length > 0 && state.geminiModels.length > 0;
+  const orCombos = hasOpenRouter ? state.apiKeys.length * state.models.length : 0;
+  const gCombos  = hasGemini    ? state.geminiKeys.length * state.geminiModels.length : 0;
+  const maxAttempts = Math.max(orCombos + gCombos, 1);
+
   let metadata = null;
   let attempt = 0;
 
-  const hasOpenRouter = state.apiKeys.length > 0 && state.models.length > 0;
-  const hasGemini = state.geminiKeys.length > 0 && state.geminiModels.length > 0;
-
-  while(!metadata && !state.shouldStop){
+  while(!metadata && !state.shouldStop && attempt < maxAttempts){
     attempt++;
     f.retries = attempt - 1;
-    updateCardStatus(idx,'processing');
+    updateCardStatus(idx, 'processing');
 
-    // Determine which provider to use this attempt
-    // If both available, alternate; otherwise use whichever is available
+    // Pick provider for this attempt
     let useGemini = false;
     if(hasGemini && hasOpenRouter){
-      useGemini = (attempt % 2 === 0); // alternate each retry
+      useGemini = (attempt % 2 === 0);
     } else if(hasGemini){
       useGemini = true;
     }
 
     try{
       if(useGemini){
-        const keyIdx = state.currentGeminiKeyIdx % state.geminiKeys.length;
-        const apiKey = state.geminiKeys[keyIdx];
-        const model = state.geminiModels[0];
+        const kIdx = state.currentGeminiKeyIdx % state.geminiKeys.length;
+        const mIdx = state.currentGeminiModelIdx % state.geminiModels.length;
+        const apiKey = state.geminiKeys[kIdx];
+        const model  = state.geminiModels[mIdx];
         metadata = await callGemini(apiKey, model, base64, mimeType, epsName);
         if(metadata){
-          state.currentGeminiKeyIdx = (state.currentGeminiKeyIdx + 1) % state.geminiKeys.length;
+          // Advance both key and model for next file (round-robin)
+          state.currentGeminiModelIdx = (state.currentGeminiModelIdx + 1) % state.geminiModels.length;
+          if(state.currentGeminiModelIdx === 0){
+            state.currentGeminiKeyIdx = (state.currentGeminiKeyIdx + 1) % state.geminiKeys.length;
+          }
           break;
         }
-        // null returned (parse failed) — rotate and delay to avoid tight loop
+        // null return — rotate model first, then key
         state.retryCount++;
-        if(hasGemini) state.currentGeminiKeyIdx = (state.currentGeminiKeyIdx + 1) % state.geminiKeys.length;
+        state.currentGeminiModelIdx = (state.currentGeminiModelIdx + 1) % state.geminiModels.length;
+        if(state.currentGeminiModelIdx === 0){
+          state.currentGeminiKeyIdx = (state.currentGeminiKeyIdx + 1) % state.geminiKeys.length;
+        }
         await sleep(1000);
       } else {
-        const keyIdx = state.currentKeyIdx % state.apiKeys.length;
-        const apiKey = state.apiKeys[keyIdx];
-        const model = state.models[0];
+        const kIdx = state.currentKeyIdx % state.apiKeys.length;
+        const mIdx = state.currentModelIdx % state.models.length;
+        const apiKey = state.apiKeys[kIdx];
+        const model  = state.models[mIdx];
         metadata = await callOpenRouter(apiKey, model, base64, mimeType, epsName);
         if(metadata){
-          state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
+          // Advance both key and model for next file (round-robin)
+          state.currentModelIdx = (state.currentModelIdx + 1) % state.models.length;
+          if(state.currentModelIdx === 0){
+            state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
+          }
           break;
         }
-        // null returned (parse failed) — rotate and delay to avoid tight loop
+        // null return — rotate model first, then key
         state.retryCount++;
-        if(hasOpenRouter) state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
+        state.currentModelIdx = (state.currentModelIdx + 1) % state.models.length;
+        if(state.currentModelIdx === 0){
+          state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
+        }
         await sleep(1000);
       }
     }catch(e){
       state.retryCount++;
-      // Rotate keys on error
-      if(hasOpenRouter) state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
-      if(hasGemini) state.currentGeminiKeyIdx = (state.currentGeminiKeyIdx + 1) % state.geminiKeys.length;
+      // On exception: rotate model first, then key — both providers
+      if(hasGemini){
+        state.currentGeminiModelIdx = (state.currentGeminiModelIdx + 1) % state.geminiModels.length;
+        if(state.currentGeminiModelIdx === 0){
+          state.currentGeminiKeyIdx = (state.currentGeminiKeyIdx + 1) % state.geminiKeys.length;
+        }
+      }
+      if(hasOpenRouter){
+        state.currentModelIdx = (state.currentModelIdx + 1) % state.models.length;
+        if(state.currentModelIdx === 0){
+          state.currentKeyIdx = (state.currentKeyIdx + 1) % state.apiKeys.length;
+        }
+      }
       await sleep(1200);
     }
   }
